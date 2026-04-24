@@ -70,8 +70,33 @@ args = parser.parse_args()
 
 print(args)
 
+# -------------------------
+# MMD kernel
+# -------------------------
+# Single kernel: [1.0], [0.5], [0.2], [0.1]
+# Multi-kernel:  [1.0, 0.5, 0.2, 0.1]
+mmd_kernel_multipliers = [1.0]
+mmd_kernel_multipliers_label = ",".join(
+    f"{value:g}" for value in mmd_kernel_multipliers
+)
+mmd_kernel_multipliers_file_label = mmd_kernel_multipliers_label.replace(
+    ".", "p"
+).replace(",", "_")
+mmd_kernel_multipliers_file_label = (
+    f"multiplier_{mmd_kernel_multipliers_file_label}"
+    if len(mmd_kernel_multipliers) == 1
+    else f"multipliers_{mmd_kernel_multipliers_file_label}"
+)
+
+print("=" * 60)
+print("Run config")
+print("MMD kernel: Gaussian on squared L2 distance")
+print("MMD denominator: multiplier * median(pairwise squared L2)")
+print(f"MMD multipliers: {mmd_kernel_multipliers_label}")
+print("=" * 60)
+
 if args.experiment is None:
-    args.experiment = "samples"
+    args.experiment = f"samples_{mmd_kernel_multipliers_file_label}"
 
 os.makedirs(args.experiment, exist_ok=True)
 
@@ -129,15 +154,6 @@ print("netD:", netD)
 
 netG.apply(base_module.weights_init)
 netD.apply(base_module.weights_init)
-
-
-# -------------------------
-# MMD kernel
-# -------------------------
-# Single kernel: [1.0], [0.5], [0.2], [0.1]
-# Multi-kernel:  [1.0, 0.5, 0.2, 0.1]
-mmd_kernel_multipliers = [1.0]
-print("MMD kernel denominator multipliers:", mmd_kernel_multipliers)
 
 # -------------------------
 # Fixed noise
@@ -320,22 +336,34 @@ for t in range(args.max_iter):
 
             vutils.save_image(
                 y_fixed,
-                f"{args.experiment}/fake_samples_{gen_iterations}.png",
+                os.path.join(
+                    args.experiment,
+                    f"fake_samples_{mmd_kernel_multipliers_file_label}_{gen_iterations}.png",
+                ),
             )
 
             vutils.save_image(
                 f_dec_X_D,
-                f"{args.experiment}/decode_samples_{gen_iterations}.png",
+                os.path.join(
+                    args.experiment,
+                    f"decode_samples_{mmd_kernel_multipliers_file_label}_{gen_iterations}.png",
+                ),
             )
 
     if t % 50 == 0 or t == args.max_iter - 1:
 
         torch.save(
             netG.state_dict(),
-            f"{args.experiment}/netG_iter_{t}.pth",
+            os.path.join(
+                args.experiment,
+                f"netG_{mmd_kernel_multipliers_file_label}_iter_{t}.pth",
+            ),
         )
 
         torch.save(
             netD.state_dict(),
-            f"{args.experiment}/netD_iter_{t}.pth",
+            os.path.join(
+                args.experiment,
+                f"netD_{mmd_kernel_multipliers_file_label}_iter_{t}.pth",
+            ),
         )
