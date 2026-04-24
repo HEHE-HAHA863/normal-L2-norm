@@ -6,5 +6,5 @@
 #BSUB -e %J.err
 #BSUB -J normal-L2-norm
 #BSUB -m gpu09
-MMD_KERNEL_MULTIPLIERS=${MMD_KERNEL_MULTIPLIERS:-1.0}
-python -u mmd_gan.py --mmd_kernel_multipliers "$MMD_KERNEL_MULTIPLIERS" 2>&1 | tee run_$(date +%Y%m%d_%H%M%S).out
+python -u mmd_gan.py 2>&1 | tee run_$(date +%Y%m%d_%H%M%S).out
+  

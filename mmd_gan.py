@@ -18,15 +18,6 @@ import base_module
 from mmd import mix_rbf_mmd2
 
 
-def parse_float_list(text):
-    values = [float(value.strip()) for value in text.split(",") if value.strip()]
-    if not values:
-        raise ValueError("mmd_kernel_multipliers must contain at least one value")
-    if any(value <= 0 for value in values):
-        raise ValueError("all mmd_kernel_multipliers must be positive")
-    return values
-
-
 # -------------------------
 # Generator
 # -------------------------
@@ -76,10 +67,8 @@ class ONE_SIDED(nn.Module):
 parser = argparse.ArgumentParser()
 parser = util.get_args(parser)
 args = parser.parse_args()
-mmd_kernel_multipliers = parse_float_list(args.mmd_kernel_multipliers)
 
 print(args)
-print("MMD kernel denominator multipliers:", mmd_kernel_multipliers)
 
 if args.experiment is None:
     args.experiment = "samples"
@@ -145,8 +134,10 @@ netD.apply(base_module.weights_init)
 # -------------------------
 # MMD kernel
 # -------------------------
-# Single-kernel median heuristic: --mmd_kernel_multipliers 1.0
-# Multi-kernel median heuristic:  --mmd_kernel_multipliers 1.0,0.5,0.2,0.1
+# Single kernel: [1.0], [0.5], [0.2], [0.1]
+# Multi-kernel:  [1.0, 0.5, 0.2, 0.1]
+mmd_kernel_multipliers = [1.0]
+print("MMD kernel denominator multipliers:", mmd_kernel_multipliers)
 
 # -------------------------
 # Fixed noise
@@ -192,7 +183,7 @@ for t in range(args.max_iter):
             p.requires_grad = True
 
         if gen_iterations < 25 or gen_iterations % 500 == 0:
-            Diters = 5
+            Diters = 100
         else:
             Diters = 5
 

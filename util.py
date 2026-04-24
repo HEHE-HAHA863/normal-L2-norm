@@ -21,7 +21,6 @@ def get_args(parser):
     parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector')
     parser.add_argument('--max_iter', type=int, default=300000, help='number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00005, help='learning rate, default=0.00005')
-    parser.add_argument('--mmd_kernel_multipliers', default='1.0', help='comma-separated multipliers for the median squared-L2 Gaussian kernel denominator, e.g. 1.0 or 1.0,0.5,0.2,0.1')
     parser.add_argument('--gpu_device', type=int, default=0, help='using gpu device id')
     parser.add_argument('--netG', default='', help="path to netG (to continue training)")
     parser.add_argument('--netD', default='', help="path to netD (to continue training)")
