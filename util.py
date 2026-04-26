@@ -26,6 +26,20 @@ def get_args(parser):
     parser.add_argument('--netD', default='', help="path to netD (to continue training)")
     parser.add_argument('--Diters', type=int, default=5, help='number of D iters per each G iter')
     parser.add_argument('--experiment', default=None, help='Where to store samples and models')
+    feature_norm_group = parser.add_mutually_exclusive_group()
+    feature_norm_group.add_argument(
+        '--normalize_mmd_features',
+        dest='normalize_mmd_features',
+        action='store_true',
+        help='L2-normalize encoder features before MMD and one-sided loss'
+    )
+    feature_norm_group.add_argument(
+        '--no_normalize_mmd_features',
+        dest='normalize_mmd_features',
+        action='store_false',
+        help='Use raw encoder features before MMD and one-sided loss'
+    )
+    parser.set_defaults(normalize_mmd_features=True)
     return parser
 
 

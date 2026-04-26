@@ -6,22 +6,22 @@ import torch
 min_var_est = 1e-8
 
 
-def _as_multiplier_list(kernel_multipliers):
-    if isinstance(kernel_multipliers, str):
-        kernel_multipliers = [
+def _as_scale_list(kernel_sigma_scales):
+    if isinstance(kernel_sigma_scales, str):
+        kernel_sigma_scales = [
             value.strip()
-            for value in kernel_multipliers.split(",")
+            for value in kernel_sigma_scales.split(",")
             if value.strip()
         ]
-    elif isinstance(kernel_multipliers, (int, float)):
-        kernel_multipliers = [kernel_multipliers]
+    elif isinstance(kernel_sigma_scales, (int, float)):
+        kernel_sigma_scales = [kernel_sigma_scales]
 
-    multipliers = [float(value) for value in kernel_multipliers]
-    if not multipliers:
-        raise ValueError("kernel_multipliers must contain at least one value")
-    if any(value <= 0 for value in multipliers):
-        raise ValueError("all kernel_multipliers must be positive")
-    return multipliers
+    scales = [float(value) for value in kernel_sigma_scales]
+    if not scales:
+        raise ValueError("kernel_sigma_scales must contain at least one value")
+    if any(value <= 0 for value in scales):
+        raise ValueError("all kernel_sigma_scales must be positive")
+    return scales
 
 
 def _off_diagonal_values(mat):
@@ -39,60 +39,68 @@ def _pairwise_squared_l2(X, Y):
     return torch.clamp(dist, min=0.0)
 
 
-def _print_distance_stats(dist_mat, median_sq_l2, multipliers, denominators):
+def _print_distance_stats(dist_mat, median_l2, sigma_scales, sigmas, denominators):
     with torch.no_grad():
-        vals = _off_diagonal_values(dist_mat)
+        sq_vals = _off_diagonal_values(dist_mat)
+        l2_vals = torch.sqrt(torch.clamp(sq_vals, min=0.0))
 
-        print("[L2 squared pairwise distance statistics]")
-        print(f"mean   : {vals.mean().item():.6f}")
-        print(f"median : {median_sq_l2.item():.6f}")
-        print(f"25%    : {vals.quantile(0.25).item():.6f}")
-        print(f"75%    : {vals.quantile(0.75).item():.6f}")
-        print(f"min    : {vals.min().item():.6f}")
-        print(f"max    : {vals.max().item():.6f}")
-        print("kernel denominator multipliers:", multipliers)
-        print("kernel denominators:", [value.item() for value in denominators])
+        print("[L2 pairwise distance statistics]")
+        print(f"mean   : {l2_vals.mean().item():.6f}")
+        print(f"median : {median_l2.item():.6f}")
+        print(f"25%    : {l2_vals.quantile(0.25).item():.6f}")
+        print(f"75%    : {l2_vals.quantile(0.75).item():.6f}")
+        print(f"min    : {l2_vals.min().item():.6f}")
+        print(f"max    : {l2_vals.max().item():.6f}")
+        print("kernel sigma scales:", sigma_scales)
+        print("kernel sigmas:", [value.item() for value in sigmas])
+        print("kernel denominators (2 * sigma^2):", [value.item() for value in denominators])
 
 
 def _mix_rbf_kernel(
     X,
     Y,
-    kernel_multipliers,
+    kernel_sigma_scales,
     print_stats=True,
     eps=1e-12,
 ):
     """
-    Gaussian kernel on squared L2 distance with median denominators.
+    Gaussian kernel with sigma set by the median L2 distance.
 
-    For each multiplier a:
-        k_a(x, y) = exp(-||x-y||_2^2 / (a * median_sq_l2))
+    For each sigma scale a:
+        sigma_a = a * median(||x-y||_2)
+        k_a(x, y) = exp(-||x-y||_2^2 / (2 * sigma_a^2))
 
-    median_sq_l2 is computed from the off-diagonal pairwise squared L2
+    The median L2 distance is computed from the off-diagonal pairwise
     distances of concat(X, Y), then detached from the gradient graph.
-    Passing several multipliers sums the corresponding Gaussian kernels.
+    Passing several scales sums the corresponding Gaussian kernels.
     """
 
     assert X.size(0) == Y.size(0), "X and Y must have same batch size"
     m = X.size(0)
-    multipliers = _as_multiplier_list(kernel_multipliers)
+    sigma_scales = _as_scale_list(kernel_sigma_scales)
 
     D = _pairwise_squared_l2(X, Y)
-    median_sq_l2 = torch.median(_off_diagonal_values(D)).detach()
-    median_sq_l2 = torch.clamp(median_sq_l2, min=eps)
+    pairwise_l2 = torch.sqrt(torch.clamp(_off_diagonal_values(D), min=0.0))
+    median_l2 = torch.median(pairwise_l2).detach()
+    median_l2 = torch.clamp(median_l2, min=eps)
 
+    sigmas = [
+        torch.clamp(median_l2 * scale, min=eps)
+        for scale in sigma_scales
+    ]
     denominators = [
-        torch.clamp(median_sq_l2 * multiplier, min=eps)
-        for multiplier in multipliers
+        torch.clamp(2.0 * sigma.pow(2), min=eps)
+        for sigma in sigmas
     ]
 
     if print_stats:
-        _print_distance_stats(D, median_sq_l2, multipliers, denominators)
+        _print_distance_stats(D, median_l2, sigma_scales, sigmas, denominators)
 
     K = torch.zeros_like(D)
     for denominator in denominators:
         K += torch.exp(-D / denominator)
 
-    return K[:m, :m], K[:m, m:], K[m:, m:], len(multipliers)
+    return K[:m, :m], K[:m, m:], K[m:, m:], len(sigma_scales)
 
 
 def debug_kernel(K_XX, K_XY, K_YY):
@@ -109,11 +117,11 @@ def debug_kernel(K_XX, K_XY, K_YY):
     print("K min/max:", K.min().item(), K.max().item())
 
 
-def mix_rbf_mmd2(X, Y, kernel_multipliers, biased=True, print_stats=True):
+def mix_rbf_mmd2(X, Y, kernel_sigma_scales, biased=True, print_stats=True):
     K_XX, K_XY, K_YY, d = _mix_rbf_kernel(
         X,
         Y,
-        kernel_multipliers,
+        kernel_sigma_scales,
         print_stats=print_stats,
     )
     if print_stats:
@@ -122,11 +130,11 @@ def mix_rbf_mmd2(X, Y, kernel_multipliers, biased=True, print_stats=True):
     return _mmd2(K_XX, K_XY, K_YY, const_diagonal=False, biased=biased)
 
 
-def mix_rbf_mmd2_and_ratio(X, Y, kernel_multipliers, biased=True, print_stats=True):
+def mix_rbf_mmd2_and_ratio(X, Y, kernel_sigma_scales, biased=True, print_stats=True):
     K_XX, K_XY, K_YY, d = _mix_rbf_kernel(
         X,
         Y,
-        kernel_multipliers,
+        kernel_sigma_scales,
         print_stats=print_stats,
     )
     # return _mmd2_and_ratio(K_XX, K_XY, K_YY, const_diagonal=d, biased=biased)

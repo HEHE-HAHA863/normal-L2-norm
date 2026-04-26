@@ -73,30 +73,38 @@ print(args)
 # -------------------------
 # MMD kernel
 # -------------------------
-# Single kernel: [1.0], [0.5], [0.2], [0.1]
-# Multi-kernel:  [1.0, 0.5, 0.2, 0.1]
-mmd_kernel_multipliers = [1.0]
-mmd_kernel_multipliers_label = ",".join(
-    f"{value:g}" for value in mmd_kernel_multipliers
+# Single kernel sigma scale: [1.0], [0.5], [0.2], [0.1]
+# Multi-kernel sigma scales:  [1.0, 0.5, 0.2, 0.1]
+mmd_kernel_sigma_scales = [1.0]
+mmd_kernel_sigma_scales_label = ",".join(
+    f"{value:g}" for value in mmd_kernel_sigma_scales
 )
-mmd_kernel_multipliers_file_label = mmd_kernel_multipliers_label.replace(
+mmd_kernel_sigma_scales_file_label = mmd_kernel_sigma_scales_label.replace(
     ".", "p"
 ).replace(",", "_")
-mmd_kernel_multipliers_file_label = (
-    f"multiplier_{mmd_kernel_multipliers_file_label}"
-    if len(mmd_kernel_multipliers) == 1
-    else f"multipliers_{mmd_kernel_multipliers_file_label}"
+mmd_kernel_sigma_scales_file_label = (
+    f"sigma_scale_{mmd_kernel_sigma_scales_file_label}"
+    if len(mmd_kernel_sigma_scales) == 1
+    else f"sigma_scales_{mmd_kernel_sigma_scales_file_label}"
 )
+mmd_feature_mode_label = (
+    "l2norm_features"
+    if args.normalize_mmd_features
+    else "raw_features"
+)
+mmd_run_label = f"{mmd_kernel_sigma_scales_file_label}_{mmd_feature_mode_label}"
 
 print("=" * 60)
 print("Run config")
-print("MMD kernel: Gaussian on squared L2 distance")
-print("MMD denominator: multiplier * median(pairwise squared L2)")
-print(f"MMD multipliers: {mmd_kernel_multipliers_label}")
+print("MMD kernel: Gaussian RBF on L2 distance")
+print("MMD sigma: sigma_scale * median(pairwise L2)")
+print("MMD denominator: 2 * sigma^2")
+print(f"MMD sigma scales: {mmd_kernel_sigma_scales_label}")
+print(f"MMD feature normalization: {mmd_feature_mode_label}")
 print("=" * 60)
 
 if args.experiment is None:
-    args.experiment = f"samples_{mmd_kernel_multipliers_file_label}"
+    args.experiment = f"samples_{mmd_run_label}"
 
 os.makedirs(args.experiment, exist_ok=True)
 
@@ -164,6 +172,12 @@ one = torch.tensor(1.0, device=device)
 mone = -one
 
 
+def maybe_normalize_mmd_features(features):
+    if not args.normalize_mmd_features:
+        return features
+    return features / (features.norm(dim=1, keepdim=True) + 1e-8)
+
+
 # -------------------------
 # Optimizers
 # -------------------------
@@ -222,7 +236,7 @@ for t in range(args.max_iter):
             netD.zero_grad()
 
             f_enc_X_D, f_dec_X_D = netD(x)
-            f_enc_X_D = f_enc_X_D / (f_enc_X_D.norm(dim=1, keepdim=True) + 1e-8)
+            f_enc_X_D = maybe_normalize_mmd_features(f_enc_X_D)
 
             noise = torch.randn(batch_size, args.nz, 1, 1, device=device)
 
@@ -230,9 +244,9 @@ for t in range(args.max_iter):
                 y = netG(noise)
 
             f_enc_Y_D, f_dec_Y_D = netD(y)
-            f_enc_Y_D = f_enc_Y_D / (f_enc_Y_D.norm(dim=1, keepdim=True) + 1e-8)
+            f_enc_Y_D = maybe_normalize_mmd_features(f_enc_Y_D)
 
-            mmd2_D = mix_rbf_mmd2(f_enc_X_D, f_enc_Y_D, mmd_kernel_multipliers)
+            mmd2_D = mix_rbf_mmd2(f_enc_X_D, f_enc_Y_D, mmd_kernel_sigma_scales)
             mmd2_D = F.relu(mmd2_D)
 
             one_side_errD = one_sided(
@@ -274,15 +288,15 @@ for t in range(args.max_iter):
         netG.zero_grad()
 
         f_enc_X, _ = netD(x)
-        f_enc_X = f_enc_X / (f_enc_X.norm(dim=1, keepdim=True) + 1e-8)
+        f_enc_X = maybe_normalize_mmd_features(f_enc_X)
 
         noise = torch.randn(batch_size, args.nz, 1, 1, device=device)
         y = netG(noise)
 
         f_enc_Y, _ = netD(y)
-        f_enc_Y = f_enc_Y / (f_enc_Y.norm(dim=1, keepdim=True) + 1e-8)
+        f_enc_Y = maybe_normalize_mmd_features(f_enc_Y)
 
-        mmd2_G = mix_rbf_mmd2(f_enc_X, f_enc_Y, mmd_kernel_multipliers)
+        mmd2_G = mix_rbf_mmd2(f_enc_X, f_enc_Y, mmd_kernel_sigma_scales)
         mmd2_G = F.relu(mmd2_G)
 
         one_side_errG = one_sided(
@@ -338,7 +352,7 @@ for t in range(args.max_iter):
                 y_fixed,
                 os.path.join(
                     args.experiment,
-                    f"fake_samples_{mmd_kernel_multipliers_file_label}_{gen_iterations}.png",
+                    f"fake_samples_{mmd_run_label}_{gen_iterations}.png",
                 ),
             )
 
@@ -346,7 +360,7 @@ for t in range(args.max_iter):
                 f_dec_X_D,
                 os.path.join(
                     args.experiment,
-                    f"decode_samples_{mmd_kernel_multipliers_file_label}_{gen_iterations}.png",
+                    f"decode_samples_{mmd_run_label}_{gen_iterations}.png",
                 ),
             )
 
@@ -356,7 +370,7 @@ for t in range(args.max_iter):
             netG.state_dict(),
             os.path.join(
                 args.experiment,
-                f"netG_{mmd_kernel_multipliers_file_label}_iter_{t}.pth",
+                f"netG_{mmd_run_label}_iter_{t}.pth",
             ),
         )
 
@@ -364,6 +378,6 @@ for t in range(args.max_iter):
             netD.state_dict(),
             os.path.join(
                 args.experiment,
-                f"netD_{mmd_kernel_multipliers_file_label}_iter_{t}.pth",
+                f"netD_{mmd_run_label}_iter_{t}.pth",
             ),
         )
