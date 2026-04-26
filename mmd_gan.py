@@ -18,6 +18,19 @@ import base_module
 from mmd import mix_rbf_mmd2
 
 
+def parse_mmd_kernel_sigma_scales(value):
+    scales = [
+        float(scale.strip())
+        for scale in value.split(",")
+        if scale.strip()
+    ]
+    if not scales:
+        raise ValueError("--mmd_kernel_sigma_scales must contain at least one value")
+    if any(scale <= 0 for scale in scales):
+        raise ValueError("--mmd_kernel_sigma_scales values must be positive")
+    return scales
+
+
 # -------------------------
 # Generator
 # -------------------------
@@ -75,7 +88,7 @@ print(args)
 # -------------------------
 # Single kernel sigma scale: [1.0], [0.5], [0.2], [0.1]
 # Multi-kernel sigma scales:  [1.0, 0.5, 0.2, 0.1]
-mmd_kernel_sigma_scales = [1.0]
+mmd_kernel_sigma_scales = parse_mmd_kernel_sigma_scales(args.mmd_kernel_sigma_scales)
 mmd_kernel_sigma_scales_label = ",".join(
     f"{value:g}" for value in mmd_kernel_sigma_scales
 )
@@ -215,7 +228,7 @@ for t in range(args.max_iter):
         if gen_iterations < 25 or gen_iterations % 500 == 0:
             Diters = 100
         else:
-            Diters = 5
+            Diters = args.Diters
 
         for _ in range(Diters):
 

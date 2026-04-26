@@ -26,6 +26,11 @@ def get_args(parser):
     parser.add_argument('--netD', default='', help="path to netD (to continue training)")
     parser.add_argument('--Diters', type=int, default=5, help='number of D iters per each G iter')
     parser.add_argument('--experiment', default=None, help='Where to store samples and models')
+    parser.add_argument(
+        '--mmd_kernel_sigma_scales',
+        default='1.0',
+        help='comma-separated positive sigma scales for the MMD RBF kernel, e.g. 1.0 or 1.0,0.5,0.2,0.1'
+    )
     feature_norm_group = parser.add_mutually_exclusive_group()
     feature_norm_group.add_argument(
         '--normalize_mmd_features',
